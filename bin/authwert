@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+
+import os
+import signal
+import time
+import json
+import random
+import argparse
+import subprocess
+
+import urllib
+import mimetypes
+import asyncio
+from aiohttp import web, WSCloseCode
+
+import webshoes as ws
+import propertybag as pb
+import sparen
+Log = sparen.log
+
+import authwert
+
+#-------------------------------------------------------------------
+# Authentication
+
+def getUid(ctx):
+
+    # Do we have a cookie
+    if ctx.opts._p.cookieid not in ctx.req.cookies:
+        return None
+
+    # User logged in?
+    uid = ctx.req.cookies[ctx.opts._p.cookieid]
+    if uid not in ctx.opts._p.users:
+        return None
+
+    return uid
+
+
+def isLoggedIn(ctx):
+
+    uid = getUid(ctx)
+    if not uid:
+        return False
+
+    t = time.time()
+    w = 6 * 24 * 60 * 60
+    c = float(ctx.opts._p.users[uid].to)
+
+    # Cookie time in the window?
+    if t - w > c or t + w < c:
+        return False
+
+    return True
+
+
+async def authVerify(ctx, q):
+
+    loggedin =  isLoggedIn(ctx)
+    if ctx.opts._p.verbose:
+        Log(f'Logged in: {loggedin}: {ctx.req.path}')
+
+    if loggedin:
+        return web.Response(text='ok', status=200)
+
+    return web.Response(text='Access Denied', status=401)
+
+
+def authResp(code, p=None, page=None, loc=None):
+    if not page:
+        page = 'web/login.html'
+    h = {}
+    if loc and p:
+        location = loc + '?' + urllib.parse.urlencode(p)
+        Log(f'Location: {location}')
+        h['Location'] = location
+        h['Content-Location'] = location
+
+    return web.FileResponse(authwert.libPath(page), status=code, headers=h)
+
+
+async def authLogin(ctx, q):
+
+    if ctx.req.body_exists:
+        m = await ctx.req.post()
+        for k in set(m.keys()):
+            q[k] = m[k]
+
+    # Log out user if requested
+    if q.logout:
+        uid = getUid(ctx)
+        if uid:
+            Log(f'Logging out : {ctx.opts._p.users[uid].username} : {uid}')
+            del ctx.opts._p.users[uid]
+
+    # Is user logged in?
+    if isLoggedIn(ctx):
+        return authResp(200, {}, 'web/logout.html')
+
+    # Default redirect
+    if not q.rd:
+        if ctx.opts._p.rootpath:
+            q.rd = f'{ctx.opts._p.rootpath}/login'
+        else:
+            q.rd = '/'
+
+    if ctx.opts._p.verbose:
+        Log(f'Redirect: {q.rd}')
+
+    # Is user trying to login?
+    if q.username and q.password:
+
+        verified = False
+
+        if ctx.opts._p.userinf and q.username in ctx.opts._p.userinf:
+            if q.password == ctx.opts._p.userinf[q.username]['password']:
+                verified = True
+        elif ctx.opts._p.userinf and '*' in ctx.opts._p.userinf:
+            if q.password == ctx.opts._p.userinf['*']['password']:
+                verified = True
+
+        # if not verified and checkCreds(ctx.opts._p, q):
+        if not verified and ctx.opts._p.dbauth:
+            if ctx.opts._p.dbauth.verify(ctx.opts._p, q.username, q.password):
+                verified = True
+
+        if not verified:
+            Log(f'Login failed : {q.username}')
+            r = authResp(403, {'rd':q.rd, 'error':'Invalid username or password'}, None, f'{ctx.opts._p.rootpath}/login')
+            r.set_cookie("login_error", "Invalid username or password", domain=ctx.opts._p.domain, max_age=3, secure=True, samesite='Strict')
+            return r
+
+        uid = ''.join(random.choice('1324567890ABCDEFGHIJKLMNOPQRSTUVWXYZ') for i in range(32))
+        Log(f'Logging in : {ctx.opts._p.domain} : {q.username}')
+
+        r = web.HTTPSeeOther(q.rd)
+        r.set_cookie(ctx.opts._p.cookieid, uid, domain=ctx.opts._p.domain, max_age=24 * 60 * 60, secure=True, samesite='Strict')
+        ctx.opts._p.users[uid] = {'to': time.time(), 'username': q.username}
+        return r
+
+    return authResp(200, {'rd':q.rd})
+
+
+#-------------------------------------------------------------------
+# Debug
+async def debugSite(ctx, q):
+
+    p = ctx.req.path.split('/')
+    while len(p) and not p[0]:
+        p = p[1:]
+    fname = '/'.join(p[1:])
+
+    p = os.path.join(ctx.opts._p.debug, fname)
+    if not os.path.isfile(p):
+        p = os.path.join(p, 'index.html')
+        if os.path.isfile(p):
+            return web.HTTPSeeOther(os.path.join(ctx.req.path, 'index.html'))
+        return web.Response(text='Not Found', status=404)
+
+    mime = mimetypes.guess_type(p)[0]
+    if not mime:
+        mime = 'text/plain'
+
+    if ctx.opts._p.verbose:
+        Log(f'[{mime}] {p}')
+
+    return web.FileResponse(p, headers={"Content-Type":mime})
+
+
+#-------------------------------------------------------------------
+# Main
+
+async def run(_p):
+
+    # Web server
+    _p.wsa = ws.WebShoesApp(_p.addr, _p.port, {'_p': _p, 'verbose': _p.verbose})
+
+    # Test server
+    if _p.debug:
+        _p.wsa.register('debug', 'cmd', 'q', 'evt', 'r', {
+                '*'    : debugSite
+            })
+
+    # Authentication
+    _p.wsa.register('auth', 'cmd', 'q', 'evt', 'r', {
+            'verify'    : authVerify,
+            'login'     : authLogin
+        })
+
+    _p.wsa.start()
+
+    # Idle
+    while _p.run:
+        await asyncio.sleep(3)
+
+
+def main(_p):
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--domain', '-d', default='', type=str, help='Domain name')
+    ap.add_argument('--rootpath', '-r', default='', type=str, help='Root Path')
+    ap.add_argument('--buildver', '-b', default='', type=str, help='Build Version')
+    ap.add_argument('--addr', '-a', default='127.0.0.1', type=str, help='Server address')
+    ap.add_argument('--port', '-p', default=18401, type=int, help='Server port')
+    ap.add_argument('--logdir', '-l', default='', type=str, help='Default log directory')
+    ap.add_argument('--logfile', '-L', default='', type=str, help='Default log directory')
+    ap.add_argument('--verbose', '-V', action='store_true', help='Verbose mode')
+    ap.add_argument('--debug', '-D', default='', type=str, help='Debug site')
+    ap.add_argument('--cookieid', '-k', default='', type=str, help='cookieid')
+    ap.add_argument('--userinf', '-u', default='', type=str, help='User information')
+    ap.add_argument('--scheme', '-s', default='https', type=str, help='Network Scheme')
+    ap.add_argument('--authfile', default='', type=str, help='Python authorize file')
+    ap.add_argument('--authparams', default='', type=str, help='Parameters to pass to auth file')
+
+    _p.merge(vars(ap.parse_args()))
+
+    if _p.logdir:
+        if not os.path.isdir(_p.logdir):
+            os.mkdir(_p.logdir)
+        if not _p.logfile:
+            _p.logfile = os.path.join(_p.logdir, 'server.log')
+    if _p.logfile:
+        sparen.log.setLogFile(_p.logfile)
+
+    if not _p.domain:
+        raise Exception('domain name (--domain) must be provided')
+
+    if not _p.cookieid:
+        raise Exception('Cookie id/name (--cookieid) must be provided')
+
+    if not _p.rootpath:
+        if _p.port:
+            _p.rootpath = f'{_p.scheme}://{_p.domain}:{_p.port}/auth'
+        else:
+            _p.rootpath = f'{_p.scheme}://{_p.domain}/auth'
+        # _p.rootdomain = '.'.join(_p.domain.split('.')[-2:])
+
+    # Unique instance id
+    _p.iid = ''.join(random.choice('1324567890ABCDEFGHIJKLMNOPQRSTUVWXYZ') for i in range(32))
+
+    # Custom auth
+    if _p.authfile:
+        if '!' == _p.authfile[0]:
+            _p.authfile = authwert.libPath(_p.authfile[1:])
+        if os.path.isfile(_p.authfile):
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("authfile",_p.authfile)
+            _p.dbauth = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_p.dbauth)
+            _p.dbauth.init(_p)
+
+    Log("Parameters: ", _p)
+
+    _p.users = {}
+
+    # Get user info
+    _p.userinf = _p.userinf.strip()
+    if _p.userinf:
+        if '{' == _p.userinf[0]:
+            _p.userinf = json.loads(_p.userinf)
+        elif os.path.isfile(_p.userinf):
+            with open(_p.userinf) as f:
+                _p.userinf = pb.Bag(json.loads(f.read()))
+    if not _p.userinf:
+        _p.userinf = {}
+
+    _p.run = True
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(run(_p))
+
+
+if __name__ == '__main__':
+    try:
+        _p = pb.Bag({'threads': {}})
+        main(_p)
+
+    except KeyboardInterrupt:
+        Log(" ~ keyboard ~ ")
+    except Exception as e:
+        Log(" ~ exception ~ ", e)
+    finally:
+        if _p.dbauth:
+            _p.dbauth.close(_p)
+        if _p.wsa:
+            _p.wsa.stop()
+            del _p.wsa
+        Log("Bye...")

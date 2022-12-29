@@ -1,0 +1,3 @@
+include authwert/*.txt
+include authwert/etc/*
+include authwert/web/*

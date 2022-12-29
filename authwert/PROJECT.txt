@@ -1,0 +1,10 @@
+name            authwert
+version         0.1.1
+description     Simple Authenticator
+company         wheresjames
+author          Robert Umbehant
+email           authwert@wheresjames.com
+url             https://github.com/wheresjames/authwert
+repo            git+ssh://git@github.com/wheresjames/authwert.git
+bugs            https://github.com/wheresjames/authwert/issues
+license         MIT
