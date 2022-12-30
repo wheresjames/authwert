@@ -41,7 +41,7 @@ async def authVerify(ctx, q):
         return web.Response(text='Access Denied', status=401)
 
     if _p.verbose:
-        Log(f'Logged in: {loggedin}: {ctx.req.path}')
+        Log(f'Logged in: {si} : {ctx.req.path}')
 
     return web.Response(text='ok', status=200)
 
