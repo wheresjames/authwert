@@ -45,13 +45,13 @@ def getSesionInfo(token, opts):
             dec = jwt.decode(token, opts['pubpem'], algorithms=["RS256"])
             return dec
         except jwt.ExpiredSignatureError:
-            Log(f'Expired: {unv} {dec}')
+            Log(f'Expired: {unv} {dec}', token)
             return None
         except jwt.InvalidSignatureError:
-            Log(f'Invalid signature: {unv} {dec}')
+            Log(f'Invalid signature: {unv} {dec}', token)
             return None
         except Exception as e:
-            Log(e)
+            Log(e, token)
             return None
 
     # Session id

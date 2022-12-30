@@ -26,17 +26,21 @@ import authwert
 
 async def authVerify(ctx, q):
 
+    _p = ctx.opts._p
+
     si = None
     try:
-        if ctx.opts._p.cookieid not in ctx.req.cookies:
-            si = pb.Bag(authwert.getSesionInfo(ctx.req.cookies[ctx.opts._p.cookieid], _p))
+        Log(_p.cookieid)
+        Log(ctx.req.cookies)
+        if _p.cookieid in ctx.req.cookies:
+            si = pb.Bag(authwert.getSesionInfo(ctx.req.cookies[_p.cookieid], _p))
     except Exception as e:
         Log(e)
 
     if not si:
         return web.Response(text='Access Denied', status=401)
 
-    if ctx.opts._p.verbose:
+    if _p.verbose:
         Log(f'Logged in: {loggedin}: {ctx.req.path}')
 
     return web.Response(text='ok', status=200)
@@ -58,6 +62,8 @@ def authResp(code, p=None, page=None, loc=None):
 
 async def authLogin(ctx, q):
 
+    _p = ctx.opts._p
+
     if ctx.req.body_exists:
         m = await ctx.req.post()
         for k in set(m.keys()):
@@ -66,8 +72,8 @@ async def authLogin(ctx, q):
     # Get session info
     si = None
     try:
-        if ctx.opts._p.cookieid in ctx.req.cookies:
-            si = pb.Bag(authwert.getSesionInfo(ctx.req.cookies[ctx.opts._p.cookieid], _p))
+        if _p.cookieid in ctx.req.cookies:
+            si = pb.Bag(authwert.getSesionInfo(ctx.req.cookies[_p.cookieid], _p))
     except Exception as e:
         Log(e)
 
@@ -75,10 +81,10 @@ async def authLogin(ctx, q):
     if q.logout:
         if si:
             Log(f'Logging out : {si.username} : {si.sid}')
-            if si.sid and si.sid in ctx.opts._p.sessions:
-                del ctx.opts._p.sessions[si.sid]
+            if si.sid and si.sid in _p.sessions:
+                del _p.sessions[si.sid]
             r = authResp(200, {'rd':q.rd})
-            r.set_cookie(ctx.opts._p.cookieid, '', domain=ctx.opts._p.domain, max_age=0, secure=True, samesite='Strict')
+            r.set_cookie(_p.cookieid, '', domain=_p.domain, max_age=0, secure=True, samesite='Strict')
             return r
 
     # Is user logged in?
@@ -87,12 +93,12 @@ async def authLogin(ctx, q):
 
     # Default redirect
     if not q.rd:
-        if ctx.opts._p.rootpath:
-            q.rd = f'{ctx.opts._p.rootpath}/login'
+        if _p.rootpath:
+            q.rd = f'{_p.rootpath}/login'
         else:
             q.rd = '/'
 
-    if ctx.opts._p.verbose:
+    if _p.verbose:
         Log(f'Redirect: {q.rd}')
 
     # Is user trying to login?
@@ -100,22 +106,22 @@ async def authLogin(ctx, q):
 
         verified = False
 
-        if ctx.opts._p.userinf and q.username in ctx.opts._p.userinf:
-            if q.password == ctx.opts._p.userinf[q.username]['password']:
+        if _p.userinf and q.username in _p.userinf:
+            if q.password == _p.userinf[q.username]['password']:
                 verified = True
-        elif ctx.opts._p.userinf and '*' in ctx.opts._p.userinf:
-            if q.password == ctx.opts._p.userinf['*']['password']:
+        elif _p.userinf and '*' in _p.userinf:
+            if q.password == _p.userinf['*']['password']:
                 verified = True
 
-        # if not verified and checkCreds(ctx.opts._p, q):
-        if not verified and ctx.opts._p.dbauth:
-            if ctx.opts._p.dbauth.verify(ctx.opts._p, q.username, q.password):
+        # if not verified:
+        if not verified and _p.dbauth:
+            if _p.dbauth.verify(_p, q.username, q.password):
                 verified = True
 
         if not verified:
             Log(f'Login failed : {q.username}')
-            r = authResp(403, {'rd':q.rd, 'error':'Invalid username or password'}, None, f'{ctx.opts._p.rootpath}/login')
-            r.set_cookie("login_error", "Invalid username or password", domain=ctx.opts._p.domain, max_age=3, secure=True, samesite='Strict')
+            r = authResp(403, {'rd':q.rd, 'error':'Invalid username or password'}, None, f'{_p.rootpath}/login')
+            r.set_cookie("login_error", "Invalid username or password", domain=_p.domain, max_age=3, secure=True, samesite='Strict')
             return r
 
         # Session id
@@ -138,12 +144,12 @@ async def authLogin(ctx, q):
             # Session id tokens
             else:
                 cookie = sid
-                ctx.opts._p.sessions[sid] = {'username': q.username, 'exp': exp, 'sid': sid}
+                _p.sessions[sid] = {'username': q.username, 'exp': exp, 'sid': sid}
 
-            Log(f'Logging in : {ctx.opts._p.domain} : {q.username}')
+            Log(f'Logging in : {c_p.domain} : {q.username}')
 
             r = web.HTTPSeeOther(q.rd)
-            r.set_cookie(ctx.opts._p.cookieid, cookie, domain=ctx.opts._p.domain, max_age=_p.exptime, secure=True, samesite='Strict')
+            r.set_cookie(_p.cookieid, cookie, domain=_p.domain, max_age=_p.exptime, secure=True, samesite='Strict')
             return r
 
         except Exception as e:
