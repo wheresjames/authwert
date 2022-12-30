@@ -45,6 +45,9 @@ setup(
             'propertybag',
             'sparen',
             'webshoes>=0.1.4',
+            'pyjwt',
+            'cryptography',
+            'dateparser'
         ],
     dependency_links=[
         ]

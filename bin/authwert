@@ -7,6 +7,7 @@ import json
 import random
 import argparse
 import subprocess
+import dateparser
 
 import urllib
 import mimetypes
@@ -23,47 +24,23 @@ import authwert
 #-------------------------------------------------------------------
 # Authentication
 
-def getUid(ctx):
-
-    # Do we have a cookie
-    if ctx.opts._p.cookieid not in ctx.req.cookies:
-        return None
-
-    # User logged in?
-    uid = ctx.req.cookies[ctx.opts._p.cookieid]
-    if uid not in ctx.opts._p.users:
-        return None
-
-    return uid
-
-
-def isLoggedIn(ctx):
-
-    uid = getUid(ctx)
-    if not uid:
-        return False
-
-    t = time.time()
-    w = 6 * 24 * 60 * 60
-    c = float(ctx.opts._p.users[uid].to)
-
-    # Cookie time in the window?
-    if t - w > c or t + w < c:
-        return False
-
-    return True
-
-
 async def authVerify(ctx, q):
 
-    loggedin =  isLoggedIn(ctx)
+    si = None
+    try:
+        if ctx.opts._p.cookieid not in ctx.req.cookies:
+            si = pb.Bag(authwert.getSesionInfo(ctx.req.cookies[ctx.opts._p.cookieid], _p))
+    except Exception as e:
+        Log(e)
+
+    if not si:
+        return web.Response(text='Access Denied', status=401)
+
     if ctx.opts._p.verbose:
         Log(f'Logged in: {loggedin}: {ctx.req.path}')
 
-    if loggedin:
-        return web.Response(text='ok', status=200)
+    return web.Response(text='ok', status=200)
 
-    return web.Response(text='Access Denied', status=401)
 
 
 def authResp(code, p=None, page=None, loc=None):
@@ -86,15 +63,26 @@ async def authLogin(ctx, q):
         for k in set(m.keys()):
             q[k] = m[k]
 
+    # Get session info
+    si = None
+    try:
+        if ctx.opts._p.cookieid in ctx.req.cookies:
+            si = pb.Bag(authwert.getSesionInfo(ctx.req.cookies[ctx.opts._p.cookieid], _p))
+    except Exception as e:
+        Log(e)
+
     # Log out user if requested
     if q.logout:
-        uid = getUid(ctx)
-        if uid:
-            Log(f'Logging out : {ctx.opts._p.users[uid].username} : {uid}')
-            del ctx.opts._p.users[uid]
+        if si:
+            Log(f'Logging out : {si.username} : {si.sid}')
+            if si.sid and si.sid in ctx.opts._p.sessions:
+                del ctx.opts._p.sessions[si.sid]
+            r = authResp(200, {'rd':q.rd})
+            r.set_cookie(ctx.opts._p.cookieid, '', domain=ctx.opts._p.domain, max_age=0, secure=True, samesite='Strict')
+            return r
 
     # Is user logged in?
-    if isLoggedIn(ctx):
+    if si:
         return authResp(200, {}, 'web/logout.html')
 
     # Default redirect
@@ -130,13 +118,36 @@ async def authLogin(ctx, q):
             r.set_cookie("login_error", "Invalid username or password", domain=ctx.opts._p.domain, max_age=3, secure=True, samesite='Strict')
             return r
 
-        uid = ''.join(random.choice('1324567890ABCDEFGHIJKLMNOPQRSTUVWXYZ') for i in range(32))
-        Log(f'Logging in : {ctx.opts._p.domain} : {q.username}')
+        # Session id
+        sid = ''.join(random.choice('1324567890ABCDEFGHIJKLMNOPQRSTUVWXYZ') for i in range(32))
 
-        r = web.HTTPSeeOther(q.rd)
-        r.set_cookie(ctx.opts._p.cookieid, uid, domain=ctx.opts._p.domain, max_age=24 * 60 * 60, secure=True, samesite='Strict')
-        ctx.opts._p.users[uid] = {'to': time.time(), 'username': q.username}
-        return r
+        # Cookie expiration
+        exp = round(time.time() + _p.exptime)
+
+        try:
+
+            # JWT
+            if _p.prvpem:
+                claims = {
+                        "username"  : q.username,
+                        "exp"       : exp,
+                        "sid"       : sid
+                    }
+                cookie = authwert.createSessionToken(claims, _p)
+
+            # Session id tokens
+            else:
+                cookie = sid
+                ctx.opts._p.sessions[sid] = {'username': q.username, 'exp': exp, 'sid': sid}
+
+            Log(f'Logging in : {ctx.opts._p.domain} : {q.username}')
+
+            r = web.HTTPSeeOther(q.rd)
+            r.set_cookie(ctx.opts._p.cookieid, cookie, domain=ctx.opts._p.domain, max_age=_p.exptime, secure=True, samesite='Strict')
+            return r
+
+        except Exception as e:
+            Log(e)
 
     return authResp(200, {'rd':q.rd})
 
@@ -211,6 +222,10 @@ def main(_p):
     ap.add_argument('--scheme', '-s', default='https', type=str, help='Network Scheme')
     ap.add_argument('--authfile', default='', type=str, help='Python authorize file')
     ap.add_argument('--authparams', default='', type=str, help='Parameters to pass to auth file')
+    ap.add_argument('--prvkey', default='', type=str, help='File containing private key to sign JWT tokens')
+    ap.add_argument('--exptime', default=0, type=int, help='Login expire time in seconds')
+    ap.add_argument('--expstr', default="after 6 days", type=str, help='Login expire time as string')
+    ap.add_argument('--userlist', default=False, type=bool, help='Set to always maintain an internal list of active users')
 
     _p.merge(vars(ap.parse_args()))
 
@@ -235,6 +250,15 @@ def main(_p):
             _p.rootpath = f'{_p.scheme}://{_p.domain}/auth'
         # _p.rootdomain = '.'.join(_p.domain.split('.')[-2:])
 
+    deft =  6 * 24 * 60 * 60
+    maxt = 90 * 24 * 60 * 60
+    if 10 > _p.exptime or maxt < _p.exptime:
+        if _p.expstr:
+            dt = dateparser.parse(_p.expstr)
+            _p.exptime = int(dt.timestamp() - time.time() + 1)
+        if 10 > _p.exptime or maxt < _p.exptime:
+            _p.exptime = deft
+
     # Unique instance id
     _p.iid = ''.join(random.choice('1324567890ABCDEFGHIJKLMNOPQRSTUVWXYZ') for i in range(32))
 
@@ -251,7 +275,12 @@ def main(_p):
 
     Log("Parameters: ", _p)
 
-    _p.users = {}
+    _p.sessions = {}
+
+    # Read the private key
+    if _p.prvkey:
+        if not authwert.readPrivateKey(_p.prvkey, _p):
+            raise Exception(f'Failed to read private key from : {_p.prvkey}')
 
     # Get user info
     _p.userinf = _p.userinf.strip()
