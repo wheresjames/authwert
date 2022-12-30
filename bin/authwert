@@ -146,7 +146,7 @@ async def authLogin(ctx, q):
                 cookie = sid
                 _p.sessions[sid] = {'username': q.username, 'exp': exp, 'sid': sid}
 
-            Log(f'Logging in : {c_p.domain} : {q.username}')
+            Log(f'Logging in : {_p.domain} : {q.username}')
 
             r = web.HTTPSeeOther(q.rd)
             r.set_cookie(_p.cookieid, cookie, domain=_p.domain, max_age=_p.exptime, secure=True, samesite='Strict')
