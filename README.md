@@ -4,38 +4,45 @@
 Simple Authenticator
 
 ```
-usage: authwert [-h] [--domain DOMAIN] [--rootpath ROOTPATH]
-                [--addr ADDR] [--port PORT]
-                [--logdir LOGDIR] [--logfile LOGFILE] [--verbose]
-                [--debug DEBUG] [--cookieid COOKIEID]
-                [--userinf USERINF] [--scheme SCHEME]
-                [--authfile AUTHFILE] [--authparams AUTHPARAMS]
+usage: authwert [-h] [--domain DOMAIN] [--rootpath ROOTPATH] [--buildver BUILDVER] 
+                [--addr ADDR] [--port PORT] [--logdir LOGDIR] [--logfile LOGFILE] 
+                [--verbose] [--debug DEBUG] [--cookieid COOKIEID] [--userinf USERINF] 
+                [--scheme SCHEME] [--authfile AUTHFILE] [--authparams AUTHPARAMS] 
+                [--prvkey PRVKEY] [--exptime EXPTIME] [--expstr EXPSTR] 
+                [--userlist USERLIST] [--algorithm ALGORITHM]
 
 options:
-  -h, --help            Show this help message and exit
+  -h, --help            show this help message and exit
   --domain DOMAIN, -d DOMAIN
-                        Domain name: mydomain.com
+                        Domain name
   --rootpath ROOTPATH, -r ROOTPATH
-                        Root web path: http://mydomain.com/where/is/auth
-  --addr ADDR, -a ADDR  Address to bind to, default is 127.0.0.1
-  --port PORT, -p PORT  Port to bind to, default is 18401
+                        Root Path
+  --buildver BUILDVER, -b BUILDVER
+                        Build Version
+  --addr ADDR, -a ADDR  Server address
+  --port PORT, -p PORT  Server port
   --logdir LOGDIR, -l LOGDIR
                         Default log directory
   --logfile LOGFILE, -L LOGFILE
                         Default log directory
   --verbose, -V         Verbose mode
   --debug DEBUG, -D DEBUG
-                        Debug site, /path/to/local/site/files
+                        Debug site
   --cookieid COOKIEID, -k COOKIEID
-                        The cookie name/id to use
+                        cookieid
   --userinf USERINF, -u USERINF
-                        User login info, can be a json string or a file path.
+                        User information
   --scheme SCHEME, -s SCHEME
-                        Network Scheme, http or https
-  --authfile AUTHFILE   Python file containing authentication funtions.
-                        Start with ! to reference authwert install path
+                        Network Scheme
+  --authfile AUTHFILE   Python authorize file
   --authparams AUTHPARAMS
-                        String to pass to auth file
+                        Parameters to pass to auth file
+  --prvkey PRVKEY       File containing private key to sign JWT tokens
+  --exptime EXPTIME     Login expire time in seconds
+  --expstr EXPSTR       Login expire time as string
+  --userlist USERLIST   Set to always maintain an internal list of active users
+  --algorithm ALGORITHM
+                        Private key algorithm
 ```
 
 ---------------------------------------------------------------------

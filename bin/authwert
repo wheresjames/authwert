@@ -232,6 +232,7 @@ def main(_p):
     ap.add_argument('--exptime', default=0, type=int, help='Login expire time in seconds')
     ap.add_argument('--expstr', default="after 6 days", type=str, help='Login expire time as string')
     ap.add_argument('--userlist', default=False, type=bool, help='Set to always maintain an internal list of active users')
+    ap.add_argument('--algorithm', default='RS256', type=str, help='Private key algorithm')
 
     _p.merge(vars(ap.parse_args()))
 

@@ -29,20 +29,23 @@ loadConfig(libPath('PROJECT.txt'))
 def createSessionToken(claims, opts):
     if 'prvpem' not in opts:
         return None
-    return jwt.encode(claims, opts['prvpem'], algorithm="RS256")
+    if 'algorithm' not in opts:
+        opts['algorithm'] = 'RS256'
+    return jwt.encode(claims, opts['prvpem'], algorithm=opts['algorithm'])
 
 
 def getSesionInfo(token, opts):
 
-    sid = ''
     unv = {}
     dec = {}
 
     # JWT?
     if 'pubpem' in opts:
         try:
+            if 'algorithm' not in opts:
+                opts['algorithm'] = 'RS256'
             unv = jwt.decode(token, options={"verify_signature": False})
-            dec = jwt.decode(token, opts['pubpem'], algorithms=["RS256"])
+            dec = jwt.decode(token, opts['pubpem'], algorithms=[opts['algorithm']])
             return dec
         except jwt.ExpiredSignatureError:
             Log(f'Expired: {unv} {dec}', token)
@@ -87,13 +90,13 @@ def readPrivateKey(fname, opts):
         opts['prvpem'] = f.read()
 
     if 'prvpem' not in opts:
-        raise Exception(f'Failed to read private key from : {_p.prvkey}')
+        raise Exception(f'Failed to read private key from : {fname}')
 
     pkey = serialization.load_pem_private_key(opts['prvpem'].encode(), None, default_backend())
     opts['pubpem'] = pkey.public_key().public_bytes(encoding=serialization.Encoding.PEM,format=serialization.PublicFormat.SubjectPublicKeyInfo).decode('utf8')
 
     if not opts['pubpem']:
-        raise Exception(f'Failed to derive public key from : {_p.prvkey}')
+        raise Exception(f'Failed to derive public key from : {fname}')
 
     return True
 
@@ -108,14 +111,14 @@ def readPrivateKey(fname, opts):
 def readCert(fname, opts):
 
     crtpem = None
-    with open(crtfile) as f:
+    with open(fname) as f:
         crtpem = f.read()
     if not crtpem:
         return False
 
     # Get public key from certificate
     co = x509.load_pem_x509_certificate(str.encode(crtpem))
-    opts['pubpem'] = prvkey.public_key().public_bytes(encoding=serialization.Encoding.PEM,format=serialization.PublicFormat.SubjectPublicKeyInfo).decode('utf8')
+    opts['pubpem'] = co.public_key().public_bytes(encoding=serialization.Encoding.PEM,format=serialization.PublicFormat.SubjectPublicKeyInfo).decode('utf8')
 
     return True
 

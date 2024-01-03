@@ -6,3 +6,7 @@
 # v0.1.3 - 2022-12-29
 
     [!] But in verification function
+
+# v0.1.6 - 2023-01-01
+
+    [+] Allow JWT algorithm to be specified via command line (--algorithm)

@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 
+# python setup.py sdist
+# python3 -m twine upload --repository pypi dist/*
+
 import os
 from setuptools import setup
 
