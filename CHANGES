@@ -10,3 +10,12 @@
 # v0.1.6 - 2023-01-01
 
     [+] Allow JWT algorithm to be specified via command line (--algorithm)
+
+# v0.1.7 - 2023-01-03
+
+    [*] Remove excess log functions
+
+# v0.1.8 - 2023-01-03
+
+    [+] Added version option (--version)
+    

@@ -30,8 +30,6 @@ async def authVerify(ctx, q):
 
     si = None
     try:
-        Log(_p.cookieid)
-        Log(ctx.req.cookies)
         if _p.cookieid in ctx.req.cookies:
             si = pb.Bag(authwert.getSesionInfo(ctx.req.cookies[_p.cookieid], _p))
     except Exception as e:
@@ -214,6 +212,7 @@ async def run(_p):
 def main(_p):
 
     ap = argparse.ArgumentParser()
+    ap.add_argument('--version', default=False, action='store_true', help='Show version')
     ap.add_argument('--domain', '-d', default='', type=str, help='Domain name')
     ap.add_argument('--rootpath', '-r', default='', type=str, help='Root Path')
     ap.add_argument('--buildver', '-b', default='', type=str, help='Build Version')
@@ -235,6 +234,11 @@ def main(_p):
     ap.add_argument('--algorithm', default='RS256', type=str, help='Private key algorithm')
 
     _p.merge(vars(ap.parse_args()))
+
+    if _p.version:
+        print(authwert.__info__["version"])
+        os._exit(0)
+        return
 
     if _p.logdir:
         if not os.path.isdir(_p.logdir):
