@@ -67,9 +67,13 @@
 </body>
 <script>
     const _q = document.querySelector.bind(document);
+    function getCookieVal(name)
+    {   let s=RegExp(name+"=[^;]+").exec(document.cookie);
+        return decodeURIComponent(!!s ? s.toString().replace(/^[^=]+./,"") : "");
+    }
     function showErr(msg)
     {   let e = _q('.errbox'), cl = e.classList;
-        e.innerHTML = msg; cl.add('fadein');
+        e.textContent = msg; cl.add('fadein');
         setTimeout(() => { cl.remove('fadein'); }, 8000);
         console.error(msg);
     }

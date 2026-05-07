@@ -13,7 +13,7 @@ def readConfig(fname):
         for line in lines:
             parts = line.strip().replace("\t", " ").split(" ")
             k = parts.pop(0).strip()
-            if '#' != k[0]:
+            if k and '#' != k[0]:
                 cfg[k] = " ".join(parts).strip()
     return cfg
 

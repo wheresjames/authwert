@@ -16,7 +16,7 @@ def loadConfig(fname):
         for line in lines:
             parts = line.strip().replace("\t", " ").split(" ")
             k = parts.pop(0).strip()
-            if '#' != k[0]:
+            if k and '#' != k[0]:
                 globals()["__%s__"%k] = " ".join(parts).strip()
                 globals()["__info__"][k] = " ".join(parts).strip()
 
@@ -34,7 +34,7 @@ def createSessionToken(claims, opts):
     return jwt.encode(claims, opts['prvpem'], algorithm=opts['algorithm'])
 
 
-def getSesionInfo(token, opts):
+def getSessionInfo(token, opts):
 
     unv = {}
     dec = {}

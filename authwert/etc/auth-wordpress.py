@@ -32,7 +32,11 @@ def verify(ctx, uid, secret):
         return False
     except Exception as e:
         print(e)
-        init(ctx)
+        try:
+            init(ctx)
+        except Exception as e2:
+            print(e2)
+        return False
 
 def close(ctx):
     if ctx.dbinf and ctx.dbinf.conn:

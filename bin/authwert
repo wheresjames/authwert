@@ -4,7 +4,8 @@ import os
 import signal
 import time
 import json
-import random
+import hmac
+import secrets
 import argparse
 import subprocess
 import dateparser
@@ -21,6 +22,19 @@ Log = sparen.log
 
 import authwert
 
+
+def isSafeRedirect(url, domain):
+    if not url:
+        return False
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.scheme and not parsed.netloc:
+        return True
+    return parsed.scheme in ('http', 'https') and (
+        parsed.hostname == domain or
+        (parsed.hostname and parsed.hostname.endswith('.' + domain))
+    )
+
+
 #-------------------------------------------------------------------
 # Authentication
 
@@ -31,7 +45,7 @@ async def authVerify(ctx, q):
     si = None
     try:
         if _p.cookieid in ctx.req.cookies:
-            si = pb.Bag(authwert.getSesionInfo(ctx.req.cookies[_p.cookieid], _p))
+            si = pb.Bag(authwert.getSessionInfo(ctx.req.cookies[_p.cookieid], _p))
     except Exception as e:
         Log(e)
 
@@ -71,7 +85,7 @@ async def authLogin(ctx, q):
     si = None
     try:
         if _p.cookieid in ctx.req.cookies:
-            si = pb.Bag(authwert.getSesionInfo(ctx.req.cookies[_p.cookieid], _p))
+            si = pb.Bag(authwert.getSessionInfo(ctx.req.cookies[_p.cookieid], _p))
     except Exception as e:
         Log(e)
 
@@ -105,10 +119,10 @@ async def authLogin(ctx, q):
         verified = False
 
         if _p.userinf and q.username in _p.userinf:
-            if q.password == _p.userinf[q.username]['password']:
+            if hmac.compare_digest(q.password, _p.userinf[q.username]['password']):
                 verified = True
         elif _p.userinf and '*' in _p.userinf:
-            if q.password == _p.userinf['*']['password']:
+            if hmac.compare_digest(q.password, _p.userinf['*']['password']):
                 verified = True
 
         # if not verified:
@@ -123,7 +137,7 @@ async def authLogin(ctx, q):
             return r
 
         # Session id
-        sid = ''.join(random.choice('1324567890ABCDEFGHIJKLMNOPQRSTUVWXYZ') for i in range(32))
+        sid = secrets.token_urlsafe(32)
 
         # Cookie expiration
         exp = round(time.time() + _p.exptime)
@@ -146,6 +160,8 @@ async def authLogin(ctx, q):
 
             Log(f'Logging in : {_p.domain} : {q.username}')
 
+            if not isSafeRedirect(q.rd, _p.domain):
+                q.rd = _p.rootpath if _p.rootpath else '/'
             r = web.HTTPSeeOther(q.rd)
             r.set_cookie(_p.cookieid, cookie, domain=_p.domain, max_age=_p.exptime, secure=True, samesite='Strict')
             return r
@@ -166,6 +182,10 @@ async def debugSite(ctx, q):
     fname = '/'.join(p[1:])
 
     p = os.path.join(ctx.opts._p.debug, fname)
+    real_debug = os.path.realpath(ctx.opts._p.debug)
+    real_p = os.path.realpath(p)
+    if real_p != real_debug and not real_p.startswith(real_debug + os.sep):
+        return web.Response(text='Forbidden', status=403)
     if not os.path.isfile(p):
         p = os.path.join(p, 'index.html')
         if os.path.isfile(p):
@@ -271,7 +291,7 @@ def main(_p):
             _p.exptime = deft
 
     # Unique instance id
-    _p.iid = ''.join(random.choice('1324567890ABCDEFGHIJKLMNOPQRSTUVWXYZ') for i in range(32))
+    _p.iid = secrets.token_urlsafe(32)
 
     # Custom auth
     if _p.authfile:
@@ -284,7 +304,7 @@ def main(_p):
             spec.loader.exec_module(_p.dbauth)
             _p.dbauth.init(_p)
 
-    Log("Parameters: ", _p)
+    Log("Parameters: ", {'addr': _p.addr, 'port': _p.port, 'domain': _p.domain, 'rootpath': _p.rootpath, 'cookieid': _p.cookieid})
 
     _p.sessions = {}
 
