@@ -28,6 +28,7 @@ When a request arrives, your proxy asks authwert whether the visitor is logged i
   - [Nextcloud / ownCloud](#nextcloud--owncloud)
   - [Ghost](#ghost)
 - [Running Tests](#running-tests)
+- [Comparison to Similar Projects](#comparison-to-similar-projects)
 - [References](#references)
 
 ---
@@ -609,6 +610,114 @@ python3 -m pytest -x
 ```
 
 The test suite covers configuration parsing, JWT token creation and validation, RSA key and certificate loading, open-redirect safety, the login/logout/verify request handlers, the debug file server including path-traversal prevention, and all six bundled auth plugins (WordPress, htpasswd, LDAP, Django, Drupal, Nextcloud, Ghost). Plugin tests mock their third-party dependencies so no database or LDAP server is required to run them.
+
+---
+
+## Comparison to Similar Projects
+
+Several tools solve the forward-auth problem in different ways. The right choice depends on where your user identities live and how much infrastructure you want to run.
+
+---
+
+### nginx HTTP basic auth
+
+The built-in `auth_basic` module in nginx validates credentials against a static `htpasswd` file with no additional process required.
+
+**Key differences:**
+
+- nginx basic auth runs inside the nginx worker — there is no separate process, no session state, and no cookie. Every request re-sends credentials as a Base64-encoded `Authorization` header.
+- The browser's built-in credential dialog is used; there is no custom login page and no way to add branding, error messages, or a logout button.
+- Credentials are scoped to the browser session. There is no expiry control, and logging out requires the browser to be closed or the stored credentials cleared manually.
+- authwert issues a signed cookie (JWT or server-side session token) after a single form-based login, so subsequent requests carry no credentials at all — just the cookie.
+
+**Choose nginx basic auth if** you need the simplest possible protection for an internal tool, have a small fixed set of users, and do not need session cookies or a custom login page.
+
+**Choose authwert if** you need a real login page, persistent sessions or JWT tokens, configurable expiry, or credentials validated against an existing database rather than a manually maintained file.
+
+---
+
+### Authelia
+
+[Authelia](https://github.com/authelia/authelia) is the closest project in deployment model — it runs as a sidecar and integrates with nginx, Traefik, Caddy, and HAProxy via the same `auth_request` mechanism. It adds multi-factor authentication (TOTP, push), a full user management portal, and a rich YAML-driven policy engine.
+
+**Key differences:**
+
+- Authelia requires Postgres (or another SQL database) and Redis as backing services. authwert has no external service dependencies — it runs as a single process.
+- Authelia is configured entirely through a YAML file with a dedicated schema; authwert is configured through command-line flags and a single Python plugin file.
+- Authelia supports TOTP, WebAuthn, and push-based MFA. authwert has no MFA support.
+- Authelia validates users against LDAP or a built-in file backend. authwert validates users against any source expressible in a Python plugin — including existing application databases that Authelia cannot reach without an LDAP facade.
+- Authelia has significantly more active development, a larger community, and more documentation.
+
+**Choose Authelia if** you need MFA, per-route access rules, an audit log, or self-service password reset. It is the natural upgrade path when authwert's feature set is outgrown.
+
+**Choose authwert if** you want to validate credentials against an existing application database (WordPress, Django, Nextcloud, etc.) without standing up additional services, or if MFA and policy rules are not required.
+
+---
+
+### oauth2-proxy
+
+[oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy) sits in front of your application and delegates all authentication to an upstream OAuth2 or OIDC provider (Google, GitHub, Azure AD, Okta, etc.).
+
+**Key differences:**
+
+- oauth2-proxy does not manage credentials at all — it redirects to an external identity provider and accepts the resulting token. authwert validates credentials directly against a local source.
+- oauth2-proxy requires an OAuth2 client ID and secret registered with a provider. authwert requires no external accounts or registrations.
+- oauth2-proxy can restrict access by email domain, group membership, or individual email address as reported by the provider. authwert's access control is limited to whether the credential check succeeds.
+- oauth2-proxy is written in Go and ships as a single static binary with no runtime dependencies. authwert requires a Python environment.
+
+**Choose oauth2-proxy if** your organisation already has a central identity provider and you want users to authenticate with their existing corporate or social credentials without managing passwords yourself.
+
+**Choose authwert if** you need to authenticate against a local database with no dependency on an external identity provider, or if you are protecting a self-hosted application whose user accounts are already stored in its own database.
+
+---
+
+### Vouch Proxy
+
+[Vouch Proxy](https://github.com/vouch/vouch-proxy) works similarly to oauth2-proxy — it validates OAuth2/OIDC tokens and issues its own session cookie for nginx. It is lighter than oauth2-proxy and easier to configure for simple single-provider setups.
+
+**Key differences:**
+
+- Like oauth2-proxy, Vouch requires an upstream OAuth2/OIDC provider and cannot authenticate against a local database.
+- Vouch issues its own short-lived JWT after the OAuth2 handshake completes, which nginx then validates on subsequent requests. authwert issues its JWT directly after a username/password form submission.
+- Vouch is more tightly coupled to nginx; oauth2-proxy and Authelia support a wider range of reverse proxies.
+- Vouch is written in Go; authwert is written in Python.
+
+**Choose Vouch if** you want OAuth2/OIDC with a smaller footprint than oauth2-proxy and your proxy is nginx.
+
+**Choose authwert if** your users authenticate with a username and password stored in an application database rather than an OAuth2 provider.
+
+---
+
+### Pomerium
+
+[Pomerium](https://github.com/pomerium/pomerium) is an identity-aware access proxy that handles both routing and authentication in a single component. It supports OIDC, fine-grained authorisation policies, and mTLS between services.
+
+**Key differences:**
+
+- Pomerium replaces your reverse proxy rather than sitting behind it. authwert is a sidecar that works alongside any existing proxy via `auth_request`.
+- Pomerium enforces access policy at the routing layer, supporting conditions based on user identity, group, device posture, and time. authwert's only access control decision is pass or fail based on the credential check.
+- Pomerium requires an OIDC identity provider. authwert has no such dependency.
+- Pomerium supports service-to-service authentication with mTLS. authwert handles only browser-facing authentication.
+
+**Choose Pomerium if** you need a zero-trust network access layer with per-route policy, device identity, or service-to-service authentication.
+
+**Choose authwert if** you have an existing reverse proxy and only need to add a login gate to it without replacing your routing layer.
+
+---
+
+### Summary
+
+| | authwert | nginx basic auth | Authelia | oauth2-proxy | Vouch Proxy | Pomerium |
+|---|---|---|---|---|---|---|
+| Login page | Yes | Browser dialog | Yes | Redirect to provider | Redirect to provider | Redirect to provider |
+| Session / JWT cookies | Yes | No | Yes | Yes | Yes | Yes |
+| MFA / 2FA | No | No | Yes | Delegated to provider | Delegated to provider | Delegated to provider |
+| Auth against existing DB | Yes (plugins) | No | No | No | No | No |
+| OAuth2 / OIDC | No | No | Yes | Yes | Yes | Yes |
+| Custom auth backend | Yes (Python) | No | No | No | No | No |
+| Proxy support | Any | nginx, Apache | nginx, Traefik, Caddy, HAProxy | Most | nginx, Traefik, Caddy | Replaces proxy |
+| Extra services required | None | None | Postgres + Redis | None | None | None |
+| Relative complexity | Low | Minimal | Medium–High | Low–Medium | Low | Medium–High |
 
 ---
 
