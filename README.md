@@ -22,10 +22,10 @@ When a request arrives, your proxy asks authwert whether the visitor is logged i
   - [Plugin Interface](#plugin-interface)
   - [WordPress](#wordpress)
   - [htpasswd](#htpasswd)
-  - [LDAP / Active Directory](#ldap--active-directory)
+  - [LDAP / Active Directory](#ldap-active-directory)
   - [Django](#django)
   - [Drupal](#drupal)
-  - [Nextcloud / ownCloud](#nextcloud--owncloud)
+  - [Nextcloud / ownCloud](#nextcloud-owncloud)
   - [Ghost](#ghost)
 - [Running Tests](#running-tests)
 - [Comparison to Similar Projects](#comparison-to-similar-projects)
@@ -33,6 +33,7 @@ When a request arrives, your proxy asks authwert whether the visitor is logged i
 
 ---
 
+<a id="how-it-works"></a>
 ## How It Works
 
 ```
@@ -60,6 +61,7 @@ Two cookie strategies are available:
 
 ---
 
+<a id="install"></a>
 ## Install
 
 ```bash
@@ -76,6 +78,7 @@ pip3 install .
 
 ---
 
+<a id="quick-start"></a>
 ## Quick Start
 
 Run a local test server (no TLS, single user):
@@ -94,8 +97,10 @@ Then visit `http://localhost:18401/auth/login` in your browser.
 
 ---
 
+<a id="authentication-modes"></a>
 ## Authentication Modes
 
+<a id="static-user-list"></a>
 ### Static User List
 
 Credentials are supplied directly on the command line or via a JSON file.
@@ -135,6 +140,7 @@ authwert \
 
 ---
 
+<a id="jwt-tokens"></a>
 ### JWT Tokens
 
 With a private key, authwert issues signed JWT cookies instead of storing sessions in memory. This is stateless — any authwert instance with the same key can validate tokens, making it suitable for multi-server deployments.
@@ -161,6 +167,7 @@ The default algorithm is `RS256`. Supported algorithms depend on the installed `
 
 ---
 
+<a id="custom-auth-plugin"></a>
 ### Custom Auth Plugin
 
 For production use — databases, LDAP, OAuth, etc. — supply a Python plugin file via `--authfile`. See [Custom Auth Plugins](#custom-auth-plugins) below.
@@ -187,6 +194,7 @@ mariadb://wp_user:wp_pass@localhost/wordpress
 
 ---
 
+<a id="session-expiry"></a>
 ## Session Expiry
 
 Control how long a login lasts:
@@ -205,6 +213,7 @@ Control how long a login lasts:
 
 ---
 
+<a id="nginx-integration"></a>
 ## Nginx Integration
 
 Add the following to your nginx site configuration:
@@ -262,6 +271,7 @@ authwert \
 
 ---
 
+<a id="command-line-reference"></a>
 ## Command-Line Reference
 
 ```
@@ -292,10 +302,12 @@ authwert [options]
 
 ---
 
+<a id="custom-auth-plugins"></a>
 ## Custom Auth Plugins
 
 A plugin is a plain Python file with three functions. Supply it with `--authfile` and pass any connection details with `--authparams`.
 
+<a id="plugin-interface"></a>
 ### Plugin Interface
 
 ```python
@@ -325,6 +337,7 @@ Using the `!` prefix in `--authfile` resolves the path relative to the authwert 
 --authfile="!auth-wordpress.py"        # bundled example
 ```
 
+<a id="wordpress"></a>
 ### WordPress
 
 Bundled at `authwert/etc/auth-wordpress.py`. Authenticates against the `wp_users` table using WordPress's phpass hashing. Users can log in with either their WordPress username or email address.
@@ -354,6 +367,7 @@ Custom table prefix (default is `wp_`):
 
 ---
 
+<a id="htpasswd"></a>
 ### htpasswd
 
 Bundled at `authwert/etc/auth-htpasswd.py`. Authenticates against an Apache-compatible `.htpasswd` file. Supports all passlib-backed schemes (bcrypt, SHA-1, MD5-crypt). The file is reloaded automatically when it changes on disk, so you can add or remove users without restarting authwert.
@@ -385,6 +399,7 @@ authwert \
 
 ---
 
+<a id="ldap-active-directory"></a>
 ### LDAP / Active Directory
 
 Bundled at `authwert/etc/auth-ldap.py`. Searches for the user with a service-account bind, then validates their password with a second bind as that user. Supports both plain LDAP with StartTLS (`ldap://`) and LDAPS (`ldaps://`).
@@ -426,6 +441,7 @@ Optional query parameters:
 
 ---
 
+<a id="django"></a>
 ### Django
 
 Bundled at `authwert/etc/auth-django.py`. Authenticates against a Django `auth_user` table. Supports PBKDF2-SHA256, bcrypt, and argon2 password hashing. Works with MariaDB/MySQL, PostgreSQL, and SQLite backends.
@@ -472,6 +488,7 @@ Optional query parameters:
 
 ---
 
+<a id="drupal"></a>
 ### Drupal
 
 Bundled at `authwert/etc/auth-drupal.py`. Authenticates against a Drupal 7/8/9/10 database using phpass hashing. Supports MariaDB/MySQL and PostgreSQL. Users can log in with their Drupal username or email address.
@@ -506,6 +523,7 @@ Optional query parameters:
 
 ---
 
+<a id="nextcloud-owncloud"></a>
 ### Nextcloud / ownCloud
 
 Bundled at `authwert/etc/auth-nextcloud.py`. Authenticates against a Nextcloud or ownCloud database. Supports current bcrypt hashes as well as the legacy SHA-1 and MD5 formats used by very old installations. Works with MariaDB/MySQL, PostgreSQL, and SQLite backends.
@@ -546,6 +564,7 @@ Optional query parameters:
 
 ---
 
+<a id="ghost"></a>
 ### Ghost
 
 Bundled at `authwert/etc/auth-ghost.py`. Authenticates Ghost staff users (admin/editor/author roles) against the Ghost `users` table using bcrypt. Only active accounts are accepted. Works with MariaDB/MySQL and SQLite (Ghost's default).
@@ -581,6 +600,7 @@ Users log in with their Ghost staff email address.
 
 ---
 
+<a id="running-tests"></a>
 ## Running Tests
 
 Install test dependencies:
@@ -613,6 +633,7 @@ The test suite covers configuration parsing, JWT token creation and validation, 
 
 ---
 
+<a id="comparison-to-similar-projects"></a>
 ## Comparison to Similar Projects
 
 Several tools solve the forward-auth problem in different ways. The right choice depends on where your user identities live and how much infrastructure you want to run.
@@ -721,6 +742,7 @@ The built-in `auth_basic` module in nginx validates credentials against a static
 
 ---
 
+<a id="references"></a>
 ## References
 
 - [GitHub repository](https://github.com/wheresjames/authwert)
