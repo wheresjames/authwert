@@ -20,7 +20,13 @@ When a request arrives, your proxy asks authwert whether the visitor is logged i
 - [Command-Line Reference](#command-line-reference)
 - [Custom Auth Plugins](#custom-auth-plugins)
   - [Plugin Interface](#plugin-interface)
-  - [WordPress Example](#wordpress-example)
+  - [WordPress](#wordpress)
+  - [htpasswd](#htpasswd)
+  - [LDAP / Active Directory](#ldap--active-directory)
+  - [Django](#django)
+  - [Drupal](#drupal)
+  - [Nextcloud / ownCloud](#nextcloud--owncloud)
+  - [Ghost](#ghost)
 - [Running Tests](#running-tests)
 - [References](#references)
 
@@ -167,6 +173,17 @@ authwert \
     --authparams="<connection-string-or-config>"
 ```
 
+To avoid exposing credentials in the process list (`ps aux`) or shell history, prefix `--authparams` with `@` to read the value from a file instead:
+
+```bash
+# /etc/authwert/db.conf (chmod 600, owned by the authwert user)
+mariadb://wp_user:wp_pass@localhost/wordpress
+```
+
+```bash
+--authparams="@/etc/authwert/db.conf"
+```
+
 ---
 
 ## Session Expiry
@@ -265,7 +282,7 @@ authwert [options]
 | `--exptime` | | | Session lifetime in seconds |
 | `--expstr` | | `after 6 days` | Session lifetime as a human-readable string |
 | `--authfile` | | | Path to a Python auth plugin (see below) |
-| `--authparams` | | | Arbitrary string passed to the auth plugin (e.g. a connection URL) |
+| `--authparams` | | | Connection string passed to the auth plugin. Prefix with `@` to read from a file: `--authparams="@/etc/authwert/db.conf"` |
 | `--logdir` | `-l` | | Directory for log files |
 | `--logfile` | `-L` | | Path to a specific log file |
 | `--verbose` | `-V` | | Enable verbose request logging |
@@ -303,13 +320,13 @@ def close(ctx):
 Using the `!` prefix in `--authfile` resolves the path relative to the authwert package directory:
 
 ```bash
---authfile="!/etc/auth-example-wordpress.py"   # absolute path
---authfile="!auth-wordpress.py"                 # bundled example
+--authfile="!/etc/auth-wordpress.py"   # absolute path
+--authfile="!auth-wordpress.py"        # bundled example
 ```
 
-### WordPress Example
+### WordPress
 
-A ready-made plugin for WordPress is bundled at `authwert/etc/auth-wordpress.py`. It authenticates against the `wp_users` table using WordPress's phpass hashing.
+Bundled at `authwert/etc/auth-wordpress.py`. Authenticates against the `wp_users` table using WordPress's phpass hashing. Users can log in with either their WordPress username or email address.
 
 **Requirements:**
 
@@ -328,7 +345,238 @@ authwert \
     --authparams="mariadb://wp_user:wp_pass@localhost/wordpress"
 ```
 
-Users can log in with either their WordPress username or their email address.
+Custom table prefix (default is `wp_`):
+
+```bash
+--authparams="mariadb://wp_user:wp_pass@localhost/wordpress?prefix=blog_"
+```
+
+---
+
+### htpasswd
+
+Bundled at `authwert/etc/auth-htpasswd.py`. Authenticates against an Apache-compatible `.htpasswd` file. Supports all passlib-backed schemes (bcrypt, SHA-1, MD5-crypt). The file is reloaded automatically when it changes on disk, so you can add or remove users without restarting authwert.
+
+**Requirements:**
+
+```bash
+pip3 install passlib[bcrypt]
+```
+
+**Create an htpasswd file:**
+
+```bash
+# bcrypt (recommended)
+htpasswd -B -c /etc/authwert/.htpasswd alice
+htpasswd -B /etc/authwert/.htpasswd bob
+```
+
+**Usage:**
+
+```bash
+authwert \
+    --domain="example.com" \
+    --rootpath="https://example.com/auth" \
+    --cookieid="<your-secret-cookie-name>" \
+    --authfile="!auth-htpasswd.py" \
+    --authparams="/etc/authwert/.htpasswd"
+```
+
+---
+
+### LDAP / Active Directory
+
+Bundled at `authwert/etc/auth-ldap.py`. Searches for the user with a service-account bind, then validates their password with a second bind as that user. Supports both plain LDAP with StartTLS (`ldap://`) and LDAPS (`ldaps://`).
+
+**Requirements:**
+
+```bash
+pip3 install ldap3
+```
+
+**Usage — OpenLDAP:**
+
+```bash
+authwert \
+    --domain="example.com" \
+    --rootpath="https://example.com/auth" \
+    --cookieid="<your-secret-cookie-name>" \
+    --authfile="!auth-ldap.py" \
+    --authparams="ldap://svc_bind:secret@ldap.example.com/dc=example,dc=com"
+```
+
+**Usage — Active Directory:**
+
+```bash
+--authparams="ldap://svc_bind:secret@dc.corp.local/DC=corp,DC=local?filter=(sAMAccountName%3D{uid})"
+```
+
+**Usage — LDAPS:**
+
+```bash
+--authparams="ldaps://svc_bind:secret@ldap.example.com/dc=example,dc=com"
+```
+
+Optional query parameters:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `filter` | `(|(uid={uid})(mail={uid}))` | LDAP search filter; `{uid}` is replaced with the sanitised username |
+
+---
+
+### Django
+
+Bundled at `authwert/etc/auth-django.py`. Authenticates against a Django `auth_user` table. Supports PBKDF2-SHA256, bcrypt, and argon2 password hashing. Works with MariaDB/MySQL, PostgreSQL, and SQLite backends.
+
+**Requirements:**
+
+```bash
+pip3 install passlib[bcrypt,argon2]
+
+# Plus the appropriate database driver:
+pip3 install mariadb          # MariaDB / MySQL
+pip3 install psycopg2-binary  # PostgreSQL
+# sqlite3 is included in Python's standard library
+```
+
+**Usage — MariaDB/MySQL:**
+
+```bash
+authwert \
+    --domain="example.com" \
+    --rootpath="https://example.com/auth" \
+    --cookieid="<your-secret-cookie-name>" \
+    --authfile="!auth-django.py" \
+    --authparams="mariadb://django_user:django_pass@localhost/myproject"
+```
+
+**Usage — PostgreSQL:**
+
+```bash
+--authparams="postgresql://django_user:django_pass@localhost/myproject"
+```
+
+**Usage — SQLite:**
+
+```bash
+--authparams="sqlite:////var/www/myproject/db.sqlite3"
+```
+
+Optional query parameters:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `table` | `auth_user` | Table name, if you use a custom user model |
+
+---
+
+### Drupal
+
+Bundled at `authwert/etc/auth-drupal.py`. Authenticates against a Drupal 7/8/9/10 database using phpass hashing. Supports MariaDB/MySQL and PostgreSQL. Users can log in with their Drupal username or email address.
+
+**Requirements:**
+
+```bash
+pip3 install passlib
+
+# Plus the appropriate database driver:
+pip3 install mariadb          # MariaDB / MySQL
+pip3 install psycopg2-binary  # PostgreSQL
+```
+
+**Usage:**
+
+```bash
+authwert \
+    --domain="example.com" \
+    --rootpath="https://example.com/auth" \
+    --cookieid="<your-secret-cookie-name>" \
+    --authfile="!auth-drupal.py" \
+    --authparams="mariadb://drupal_user:drupal_pass@localhost/drupal"
+```
+
+Optional query parameters:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `version` | `8` | Drupal major version; `7` uses the `users` table, `8`+ uses `users_field_data` |
+| `table` | *(derived from version)* | Override the users table name |
+
+---
+
+### Nextcloud / ownCloud
+
+Bundled at `authwert/etc/auth-nextcloud.py`. Authenticates against a Nextcloud or ownCloud database. Supports current bcrypt hashes as well as the legacy SHA-1 and MD5 formats used by very old installations. Works with MariaDB/MySQL, PostgreSQL, and SQLite backends.
+
+**Requirements:**
+
+```bash
+pip3 install passlib[bcrypt]
+
+# Plus the appropriate database driver:
+pip3 install mariadb          # MariaDB / MySQL
+pip3 install psycopg2-binary  # PostgreSQL
+# sqlite3 is included in Python's standard library
+```
+
+**Usage — MariaDB/MySQL:**
+
+```bash
+authwert \
+    --domain="example.com" \
+    --rootpath="https://example.com/auth" \
+    --cookieid="<your-secret-cookie-name>" \
+    --authfile="!auth-nextcloud.py" \
+    --authparams="mariadb://nc_user:nc_pass@localhost/nextcloud"
+```
+
+**Usage — SQLite:**
+
+```bash
+--authparams="sqlite:////var/www/nextcloud/data/owncloud.db"
+```
+
+Optional query parameters:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `prefix` | `oc_` | Table prefix |
+
+---
+
+### Ghost
+
+Bundled at `authwert/etc/auth-ghost.py`. Authenticates Ghost staff users (admin/editor/author roles) against the Ghost `users` table using bcrypt. Only active accounts are accepted. Works with MariaDB/MySQL and SQLite (Ghost's default).
+
+**Requirements:**
+
+```bash
+pip3 install passlib[bcrypt]
+
+# Plus the appropriate database driver:
+pip3 install mariadb  # MariaDB / MySQL
+# sqlite3 is included in Python's standard library
+```
+
+**Usage — SQLite (Ghost default):**
+
+```bash
+authwert \
+    --domain="example.com" \
+    --rootpath="https://example.com/auth" \
+    --cookieid="<your-secret-cookie-name>" \
+    --authfile="!auth-ghost.py" \
+    --authparams="sqlite:////var/lib/ghost/content/data/ghost.db"
+```
+
+**Usage — MySQL/MariaDB:**
+
+```bash
+--authparams="mariadb://ghost_user:ghost_pass@localhost/ghost"
+```
+
+Users log in with their Ghost staff email address.
 
 ---
 
@@ -360,7 +608,7 @@ python3 -m pytest test/test_auth.py::TestAuthVerify::test_valid_jwt_cookie_retur
 python3 -m pytest -x
 ```
 
-The test suite covers configuration parsing, JWT token creation and validation, RSA key and certificate loading, open-redirect safety, the login/logout/verify request handlers, and the debug file server including path-traversal prevention.
+The test suite covers configuration parsing, JWT token creation and validation, RSA key and certificate loading, open-redirect safety, the login/logout/verify request handlers, the debug file server including path-traversal prevention, and all six bundled auth plugins (WordPress, htpasswd, LDAP, Django, Drupal, Nextcloud, Ghost). Plugin tests mock their third-party dependencies so no database or LDAP server is required to run them.
 
 ---
 

@@ -293,6 +293,12 @@ def main(_p):
     # Unique instance id
     _p.iid = secrets.token_urlsafe(32)
 
+    # Resolve --authparams from a file if the value starts with '@'
+    if _p.authparams and '@' == _p.authparams[0]:
+        fpath = _p.authparams[1:]
+        with open(fpath) as f:
+            _p.authparams = f.read().strip()
+
     # Custom auth
     if _p.authfile:
         if '!' == _p.authfile[0]:
