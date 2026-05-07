@@ -287,7 +287,7 @@ authwert [options]
 | `--logdir` | `-l` | | Directory for log files |
 | `--logfile` | `-L` | | Path to a specific log file |
 | `--verbose` | `-V` | | Enable verbose request logging |
-| `--debug` | `-D` | | Serve a local directory for testing (exposes files at `/debug/`) |
+| `--serve` | `-S` | | Serve a local directory with login protection (all paths require authentication) |
 | `--buildver` | `-b` | | Build version string (informational) |
 
 ---
@@ -609,7 +609,7 @@ python3 -m pytest test/test_auth.py::TestAuthVerify::test_valid_jwt_cookie_retur
 python3 -m pytest -x
 ```
 
-The test suite covers configuration parsing, JWT token creation and validation, RSA key and certificate loading, open-redirect safety, the login/logout/verify request handlers, the debug file server including path-traversal prevention, and all six bundled auth plugins (WordPress, htpasswd, LDAP, Django, Drupal, Nextcloud, Ghost). Plugin tests mock their third-party dependencies so no database or LDAP server is required to run them.
+The test suite covers configuration parsing, JWT token creation and validation, RSA key and certificate loading, open-redirect safety, the login/logout/verify request handlers, the `--serve` file server including authentication enforcement and path-traversal prevention, and all six bundled auth plugins (WordPress, htpasswd, LDAP, Django, Drupal, Nextcloud, Ghost). Plugin tests mock their third-party dependencies so no database or LDAP server is required to run them.
 
 ---
 

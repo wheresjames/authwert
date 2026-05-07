@@ -5,6 +5,7 @@ import signal
 import time
 import json
 import hmac
+import hashlib
 import secrets
 import argparse
 import subprocess
@@ -174,17 +175,30 @@ async def authLogin(ctx, q):
 
 #-------------------------------------------------------------------
 # Debug
-async def debugSite(ctx, q):
+async def serveSite(ctx, q):
+
+    _p = ctx.opts._p
+
+    si = None
+    try:
+        if _p.cookieid in ctx.req.cookies:
+            si = pb.Bag(authwert.getSessionInfo(ctx.req.cookies[_p.cookieid], _p))
+    except Exception as e:
+        Log(e)
+
+    if not si:
+        rd = urllib.parse.quote(ctx.req.path, safe='')
+        return web.HTTPSeeOther(f'{_p.rootpath}/login?rd={rd}')
 
     p = ctx.req.path.split('/')
     while len(p) and not p[0]:
         p = p[1:]
-    fname = '/'.join(p[1:])
+    fname = '/'.join(p)
 
-    p = os.path.join(ctx.opts._p.debug, fname)
-    real_debug = os.path.realpath(ctx.opts._p.debug)
+    p = os.path.join(_p.serve, fname)
+    real_serve = os.path.realpath(_p.serve)
     real_p = os.path.realpath(p)
-    if real_p != real_debug and not real_p.startswith(real_debug + os.sep):
+    if real_p != real_serve and not real_p.startswith(real_serve + os.sep):
         return web.Response(text='Forbidden', status=403)
     if not os.path.isfile(p):
         p = os.path.join(p, 'index.html')
@@ -196,7 +210,7 @@ async def debugSite(ctx, q):
     if not mime:
         mime = 'text/plain'
 
-    if ctx.opts._p.verbose:
+    if _p.verbose:
         Log(f'[{mime}] {p}')
 
     return web.FileResponse(p, headers={"Content-Type":mime})
@@ -210,17 +224,18 @@ async def run(_p):
     # Web server
     _p.wsa = ws.WebShoesApp(_p.addr, _p.port, {'_p': _p, 'verbose': _p.verbose})
 
-    # Test server
-    if _p.debug:
-        _p.wsa.register('debug', 'cmd', 'q', 'evt', 'r', {
-                '*'    : debugSite
-            })
-
-    # Authentication
+    # Authentication (registered first so it takes priority over the catch-all)
     _p.wsa.register('auth', 'cmd', 'q', 'evt', 'r', {
             'verify'    : authVerify,
             'login'     : authLogin
         })
+
+    # Serve catch-all: serves the directory at every path so that absolute
+    # links in the site (/css, /js, etc.) resolve correctly.
+    if _p.serve:
+        _p.wsa.register('*', 'cmd', 'q', 'evt', 'r', {
+                '*'    : serveSite
+            })
 
     _p.wsa.start()
 
@@ -241,10 +256,10 @@ def main(_p):
     ap.add_argument('--logdir', '-l', default='', type=str, help='Default log directory')
     ap.add_argument('--logfile', '-L', default='', type=str, help='Default log directory')
     ap.add_argument('--verbose', '-V', action='store_true', help='Verbose mode')
-    ap.add_argument('--debug', '-D', default='', type=str, help='Debug site')
+    ap.add_argument('--serve', '-S', default='', type=str, help='Serve a local directory with login protection')
     ap.add_argument('--cookieid', '-k', default='', type=str, help='cookieid')
     ap.add_argument('--userinf', '-u', default='', type=str, help='User information')
-    ap.add_argument('--scheme', '-s', default='https', type=str, help='Network Scheme')
+    ap.add_argument('--scheme', '-s', default=None, type=str, help='Network Scheme (default: http with --serve, https otherwise)')
     ap.add_argument('--authfile', default='', type=str, help='Python authorize file')
     ap.add_argument('--authparams', default='', type=str, help='Parameters to pass to auth file')
     ap.add_argument('--prvkey', default='', type=str, help='File containing private key to sign JWT tokens')
@@ -267,6 +282,19 @@ def main(_p):
             _p.logfile = os.path.join(_p.logdir, 'server.log')
     if _p.logfile:
         sparen.log.setLogFile(_p.logfile)
+
+    # Apply --serve defaults before validation so the one-liner works:
+    #   authwert --userinf='...' --serve=/some/dir
+    if _p.serve:
+        _p.serve = os.path.realpath(os.path.expanduser(_p.serve))
+        if not _p.domain:
+            _p.domain = 'localhost'
+        if not _p.scheme:
+            _p.scheme = 'http'
+        if not _p.cookieid:
+            _p.cookieid = 'aw-' + hashlib.sha256(_p.serve.encode()).hexdigest()[:16]
+    elif not _p.scheme:
+        _p.scheme = 'https'
 
     if not _p.domain:
         raise Exception('domain name (--domain) must be provided')
