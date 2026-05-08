@@ -16,6 +16,7 @@ When a request arrives, your proxy asks authwert whether the visitor is logged i
   - [JWT Tokens](#jwt-tokens)
   - [Custom Auth Plugin](#custom-auth-plugin)
 - [Session Expiry](#session-expiry)
+- [Auth Endpoints](#auth-endpoints)
 - [Nginx Integration](#nginx-integration)
 - [Traefik Integration](#traefik-integration)
 - [Command-Line Reference](#command-line-reference)
@@ -29,6 +30,7 @@ When a request arrives, your proxy asks authwert whether the visitor is logged i
   - [Nextcloud / ownCloud](#nextcloud-owncloud)
   - [Ghost](#ghost)
 - [Running Tests](#running-tests)
+- [Known Limitations](#known-limitations)
 - [Comparison to Similar Projects](#comparison-to-similar-projects)
 - [References](#references)
 
@@ -215,6 +217,25 @@ Control how long a login lasts:
 
 ---
 
+<a id="auth-endpoints"></a>
+## Auth Endpoints
+
+authwert exposes three endpoints under the path configured by `--rootpath` (default: `https://<domain>:<port>/auth`):
+
+| Endpoint | Description |
+|---|---|
+| `/auth/verify` | Session check used by the reverse proxy. Returns `200` if the session cookie is valid, `401` otherwise. Not intended for direct browser access. |
+| `/auth/login` | Serves the login form to unauthenticated visitors. If the visitor already has a valid session cookie, serves the logout form instead. This is the only logout URL — there is no separate `/auth/logout`. |
+| `/auth/logo.png` | Serves the logo image. Defaults to the bundled authwert logo; override with `--logoimage`. |
+
+**Logging out** — direct users or link to `/auth/login`. When authwert detects a valid session cookie it automatically serves the logout form rather than the login form.
+
+```
+http://localhost:18401/auth/login
+```
+
+---
+
 <a id="nginx-integration"></a>
 ## Nginx Integration
 
@@ -350,6 +371,9 @@ authwert [options]
 | `--logfile` | `-L` | | Path to a specific log file |
 | `--verbose` | `-V` | | Enable verbose request logging |
 | `--serve` | `-S` | | Serve a local directory with login protection (all paths require authentication) |
+| `--loginpage` | | | Path to a custom login page HTML file |
+| `--logoutpage` | | | Path to a custom logout page HTML file |
+| `--logoimage` | | | Path to a logo image file, served at `/auth/logo.png` |
 | `--buildver` | `-b` | | Build version string (informational) |
 
 ---
@@ -791,6 +815,22 @@ The built-in `auth_basic` module in nginx validates credentials against a static
 | Proxy support | Any | nginx, Apache | nginx, Traefik, Caddy, HAProxy | Most | nginx, Traefik, Caddy | Replaces proxy |
 | Extra services required | None | None | Postgres + Redis | None | None | None |
 | Relative complexity | Low | Minimal | Medium–High | Low–Medium | Low | Medium–High |
+
+---
+
+<a id="known-limitations"></a>
+## Known Limitations
+
+### JWT logout does not invalidate the token
+
+When running in JWT mode (`--prvkey`), logging out clears the browser cookie but does not invalidate the token itself. Because JWTs are stateless — verified by signature alone with no server-side record — a captured token remains valid until its natural expiry.
+
+In session-token mode (no `--prvkey`) logout immediately removes the session from server memory, so the token cannot be reused.
+
+**Planned:** An optional server-side session index for JWT mode that allows immediate invalidation on logout while preserving the stateless, multi-instance verification that makes JWT useful for SSO deployments. Until then:
+
+- Keep `--exptime` / `--expstr` short if immediate logout enforcement is important.
+- Prefer session-token mode for single-instance deployments where statelessness is not required.
 
 ---
 

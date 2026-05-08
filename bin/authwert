@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 
 import os
-import signal
 import time
 import json
 import hmac
 import hashlib
 import secrets
 import argparse
-import subprocess
 import dateparser
 
 import urllib
 import mimetypes
 import asyncio
-from aiohttp import web, WSCloseCode
+from aiohttp import web
 
 import webshoes as ws
 import propertybag as pb
@@ -65,8 +63,8 @@ async def authVerify(ctx, q):
 
 
 def authResp(code, p=None, page=None, loc=None):
-    if not page:
-        page = 'web/login.html'
+    if not os.path.isabs(page) if page else True:
+        page = authwert.libPath(page or 'web/login.html')
     h = {}
     if loc and p:
         location = loc + '?' + urllib.parse.urlencode(p)
@@ -74,7 +72,16 @@ def authResp(code, p=None, page=None, loc=None):
         h['Location'] = location
         h['Content-Location'] = location
 
-    return web.FileResponse(authwert.libPath(page), status=code, headers=h)
+    return web.FileResponse(page, status=code, headers=h)
+
+
+async def authLogo(ctx, q):
+    _p = ctx.opts._p
+    fpath = _p.logoimage
+    if not os.path.isfile(fpath):
+        return web.Response(text='Not Found', status=404)
+    mime = mimetypes.guess_type(fpath)[0] or 'image/png'
+    return web.FileResponse(fpath, headers={"Content-Type": mime})
 
 
 async def authLogin(ctx, q):
@@ -100,13 +107,13 @@ async def authLogin(ctx, q):
             Log(f'Logging out : {si.username} : {si.sid}')
             if si.sid and si.sid in _p.sessions:
                 del _p.sessions[si.sid]
-            r = authResp(200, {'rd':q.rd})
+            r = authResp(200, {'rd':q.rd}, _p.loginpage)
             r.set_cookie(_p.cookieid, '', domain=_p.domain, max_age=0, secure=True, samesite='Strict')
             return r
 
     # Is user logged in?
     if si:
-        return authResp(200, {}, 'web/logout.html')
+        return authResp(200, {}, _p.logoutpage)
 
     # Default redirect
     if not q.rd:
@@ -171,7 +178,7 @@ async def authLogin(ctx, q):
         except Exception as e:
             Log(e)
 
-    return authResp(200, {'rd':q.rd})
+    return authResp(200, {'rd':q.rd}, _p.loginpage)
 
 
 #-------------------------------------------------------------------
@@ -228,7 +235,8 @@ async def run(_p):
     # Authentication (registered first so it takes priority over the catch-all)
     _p.wsa.register('auth', 'cmd', 'q', 'evt', 'r', {
             'verify'    : authVerify,
-            'login'     : authLogin
+            'login'     : authLogin,
+            'logo.png'  : authLogo
         })
 
     # Serve catch-all: serves the directory at every path so that absolute
@@ -268,6 +276,9 @@ def main(_p):
     ap.add_argument('--expstr', default="after 6 days", type=str, help='Login expire time as string')
     ap.add_argument('--userlist', default=False, type=bool, help='Set to always maintain an internal list of active users')
     ap.add_argument('--algorithm', default='RS256', type=str, help='Private key algorithm')
+    ap.add_argument('--loginpage', default='', type=str, help='Path to custom login page HTML file')
+    ap.add_argument('--logoutpage', default='', type=str, help='Path to custom logout page HTML file')
+    ap.add_argument('--logoimage', default='', type=str, help='Path to logo image file served at /auth/logo.png')
 
     _p.merge(vars(ap.parse_args()))
 
@@ -315,6 +326,8 @@ def main(_p):
     if 10 > _p.exptime or maxt < _p.exptime:
         if _p.expstr:
             dt = dateparser.parse(_p.expstr)
+            if dt is None:
+                raise Exception(f'Could not parse --expstr value: {repr(_p.expstr)}')
             _p.exptime = int(dt.timestamp() - time.time() + 1)
         if 10 > _p.exptime or maxt < _p.exptime:
             _p.exptime = deft
@@ -339,6 +352,14 @@ def main(_p):
             spec.loader.exec_module(_p.dbauth)
             _p.dbauth.init(_p)
 
+    _p.loginpage = os.path.realpath(os.path.expanduser(_p.loginpage)) if _p.loginpage else authwert.libPath('web/login.html')
+    _p.logoutpage = os.path.realpath(os.path.expanduser(_p.logoutpage)) if _p.logoutpage else authwert.libPath('web/logout.html')
+    _p.logoimage = os.path.realpath(os.path.expanduser(_p.logoimage)) if _p.logoimage else authwert.libPath('web/authwert.png')
+    if not os.path.isfile(_p.loginpage):
+        raise Exception(f'Login page not found: {_p.loginpage}')
+    if not os.path.isfile(_p.logoutpage):
+        raise Exception(f'Logout page not found: {_p.logoutpage}')
+
     Log("Parameters: ", {'addr': _p.addr, 'port': _p.port, 'domain': _p.domain, 'rootpath': _p.rootpath, 'cookieid': _p.cookieid})
 
     _p.sessions = {}
@@ -352,6 +373,7 @@ def main(_p):
     _p.userinf = _p.userinf.strip()
     if _p.userinf:
         if '{' == _p.userinf[0]:
+            Log('WARNING: --userinf credentials are visible in the process list (ps aux) and shell history. Use a file path instead: --userinf=/etc/authwert/users.json')
             _p.userinf = json.loads(_p.userinf)
         elif os.path.isfile(_p.userinf):
             with open(_p.userinf) as f:

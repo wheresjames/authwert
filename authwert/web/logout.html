@@ -8,7 +8,7 @@
         *{-webkit-box-sizing:inherit;box-sizing:inherit}
         @viewport{width: device-width; zoom: 1.0;}
         @-ms-viewport{width: device-width;}
-        :root {--colbkg:#234;--colfg:#eee;--colhov:#456;--colico:#678;--colbtn:#345;--colerrfg:#fff;--colerrbg:#f00;}
+        :root {--colbkg:#122244;--colfg:#e8f0fe;--colhov:#1e3a6e;--colico:#29b6f6;--colbtn:#1565c0;--colerrfg:#fff;--colerrbg:#f00;}
         html{-webkit-box-sizing:border-box;box-sizing:border-box;font-size:100%;height:100%}
         body{background-color:#000;color:#bbb;font-family:'Open Sans',sans-serif;font-size:14px;font-size:.875rem;font-weight:400;height:100%;line-height:1.5;margin:0;min-height:100vh}
         .align{-webkit-box-align:center;-ms-flex-align:center;align-items:center;display:-webkit-box;display:-ms-flexbox;display:flex;-webkit-box-orient:vertical;-webkit-box-direction:normal;-ms-flex-direction:column;flex-direction:column;-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center}
@@ -34,9 +34,10 @@
         p{margin-bottom:24px;margin-bottom:1.5rem;margin-top:24px;margin-top:1.5rem}
         .text--center{text-align:center}
         .logo{display: flex; justify-content: center;} .logo a{width:60%} .logo img{width:100%}
-        .footer{position: fixed; left: 0; right: 0; bottom: 0; height: 40px; z-index: 1}
-        .errbox{opacity: 0; transition: opacity 1s ease-in-out; display: flex; align-content: center; padding: .25em 1em; border-radius: 10px; width:100%; height:100%; font-family:'Arial'; font-size:20px; font-weight:'bold'; color:var(--colerrfg); background:var(--colerrbg)}
-        .fadein{transition: opacity 1s ease-in-out; opacity: 1;} .fadeout{transition: opacity 2s ease-in-out; opacity: 0;}
+        .footer{position:fixed;left:0;right:0;bottom:1.5rem;display:flex;justify-content:center;pointer-events:none;z-index:1}
+        .errbox{opacity:0;transition:opacity .4s ease-in-out;display:flex;align-items:center;gap:.6em;pointer-events:auto;cursor:pointer;padding:.6em 1.2em;border-radius:.5rem;max-width:360px;width:90%;font-family:'Arial';font-size:.95rem;font-weight:bold;color:var(--colerrfg);background:var(--colbkg);border-left:4px solid var(--colerrbg);box-shadow:0 4px 16px rgba(0,0,0,.6)}
+        .errbox .err-icon{font-size:1.1em;flex-shrink:0}
+        .fadein{opacity:1} .fadeout{opacity:0;transition:opacity .6s ease-in-out}
         .blockbreak{margin: 2em}
     </style>
     <script type="text/javascript">if (top !== self) top.location.href = self.location.href;</script>
@@ -49,7 +50,7 @@
             <div class="form_field">
                 <div class="logo">
                     <a id='link_home' href="/">
-                        <img src="/logo.png" onerror="this.parentNode.removeChild(this)">
+                        <img src="/auth/logo.png" onerror="this.parentNode.removeChild(this)">
                     </a>
                 </div>
             </div>
@@ -62,7 +63,7 @@
 
     </div>
 
-    <div class="footer"><div class="errbox"></div></div>
+    <div class="footer"><div class="errbox"><span class="err-icon">⚠</span><span class="err-msg"></span></div></div>
 
 </body>
 <script>
@@ -73,20 +74,24 @@
     }
     function showErr(msg)
     {   let e = _q('.errbox'), cl = e.classList;
-        e.textContent = msg; cl.add('fadein');
-        setTimeout(() => { cl.remove('fadein'); }, 8000);
+        _q('.err-msg').textContent = msg;
+        cl.remove('fadeout'); cl.add('fadein');
+        e._t = setTimeout(() => { cl.add('fadeout'); cl.remove('fadein'); }, 8000);
         console.error(msg);
     }
+    _q('.errbox').addEventListener('click', () => {
+        let e = _q('.errbox'), cl = e.classList;
+        clearTimeout(e._t); cl.add('fadeout'); cl.remove('fadein');
+    });
     var _GET=[];
     window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, (a,k,v)=>_GET[decodeURIComponent(k)]=decodeURIComponent(v.replace(/\+/g, ' ')));
     if (_GET.error) setTimeout(() => showErr(_GET.error), 200);
     let err = getCookieVal("login_error");
     if (err) setTimeout(() => showErr(err), 200);
     if (_GET.rd)
-    {   console.log(`Redirect: ${_GET.rd}`);
-        _q('#rd').value = _GET.rd;
-        _q('#logout_form').action = '/auth/login?rd='+_GET.rd
-        _q('#link_home').href = _GET.rd
+    {   _q('#rd').value = _GET.rd;
+        _q('#logout_form').action = '/auth/login?rd='+encodeURIComponent(_GET.rd);
+        _q('#link_home').href = _GET.rd;
     }
     // if (0 <= document.location.href.indexOf("?"))
     //     window.history.pushState({},document.title,document.location.href.split('?')[0]);
