@@ -103,6 +103,50 @@ class TestAuthVerify:
 
 
 # ---------------------------------------------------------------------------
+# authVerify — Traefik ForwardAuth behaviour
+
+class TestAuthVerifyForwardedUri:
+
+    async def test_forwarded_uri_redirects_to_login(self, bin_mod, rsa_keypair):
+        _p = make_jwt_opts(rsa_keypair)
+        req = MockRequest(cookies={}, headers={"X-Forwarded-Uri": "/protected/page"})
+        ctx = make_ctx(req, _p)
+        resp = await bin_mod.authVerify(ctx, pb.Bag({}))
+        assert resp.status == 303
+        assert "/login" in resp.location
+
+    async def test_forwarded_uri_sets_rd_in_redirect(self, bin_mod, rsa_keypair):
+        _p = make_jwt_opts(rsa_keypair)
+        req = MockRequest(cookies={}, headers={"X-Forwarded-Uri": "/protected/page"})
+        ctx = make_ctx(req, _p)
+        resp = await bin_mod.authVerify(ctx, pb.Bag({}))
+        assert "rd=" in resp.location
+        assert "%2F" in resp.location or "/protected" in resp.location
+
+    async def test_forwarded_uri_special_chars_are_encoded(self, bin_mod, rsa_keypair):
+        _p = make_jwt_opts(rsa_keypair)
+        req = MockRequest(cookies={}, headers={"X-Forwarded-Uri": "/path?q=1&x=2"})
+        ctx = make_ctx(req, _p)
+        resp = await bin_mod.authVerify(ctx, pb.Bag({}))
+        assert "&" not in resp.location.split("rd=", 1)[1]
+
+    async def test_no_forwarded_uri_still_returns_401(self, bin_mod, rsa_keypair):
+        _p = make_jwt_opts(rsa_keypair)
+        req = MockRequest(cookies={}, headers={})
+        ctx = make_ctx(req, _p)
+        resp = await bin_mod.authVerify(ctx, pb.Bag({}))
+        assert resp.status == 401
+
+    async def test_valid_cookie_with_forwarded_uri_returns_200(self, bin_mod, rsa_keypair):
+        _p = make_jwt_opts(rsa_keypair)
+        token = _make_jwt_token(rsa_keypair["prvpem"])
+        req = MockRequest(cookies={"auth_token": token}, headers={"X-Forwarded-Uri": "/protected"})
+        ctx = make_ctx(req, _p)
+        resp = await bin_mod.authVerify(ctx, pb.Bag({}))
+        assert resp.status == 200
+
+
+# ---------------------------------------------------------------------------
 # authLogin — GET-style (no credentials, not logged in)
 
 class TestAuthLoginUnauthenticated:
@@ -123,6 +167,7 @@ class TestAuthLoginUnauthenticated:
         resp = await bin_mod.authLogin(ctx, q)
         assert resp.status == 200
         assert q.rd  # should be populated with a default
+        assert not q.rd.endswith("/login")  # must not loop back to the login page
 
 
 # ---------------------------------------------------------------------------

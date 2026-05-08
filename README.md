@@ -17,6 +17,7 @@ When a request arrives, your proxy asks authwert whether the visitor is logged i
   - [Custom Auth Plugin](#custom-auth-plugin)
 - [Session Expiry](#session-expiry)
 - [Nginx Integration](#nginx-integration)
+- [Traefik Integration](#traefik-integration)
 - [Command-Line Reference](#command-line-reference)
 - [Custom Auth Plugins](#custom-auth-plugins)
   - [Plugin Interface](#plugin-interface)
@@ -46,11 +47,12 @@ Browser ──► nginx ──► your app
 ```
 
 1. A visitor requests a protected page.
-2. nginx makes an internal subrequest to `authwert /auth/verify`, passing the visitor's cookies.
-3. authwert validates the session cookie and replies `200` (pass) or `401` (deny).
-4. On `401`, nginx redirects the browser to `/auth/login?rd=<original-url>`.
-5. The visitor logs in; authwert sets a signed cookie and redirects back to `rd`.
-6. All subsequent requests pass step 3 automatically until the session expires.
+2. The reverse proxy makes a subrequest to `authwert /auth/verify`, passing the visitor's cookies.
+3. authwert validates the session cookie and replies `200` (pass) or, on failure, either redirects to the login page or returns `401`.
+4. The visitor logs in; authwert sets a signed cookie and redirects back to the original URL.
+5. All subsequent requests pass step 3 automatically until the session expires.
+
+**nginx** handles the `401 → login redirect` itself via `error_page`. **Traefik ForwardAuth** has no equivalent directive, so authwert detects the `X-Forwarded-Uri` header that Traefik injects and issues the redirect directly, making both proxies work without extra middleware.
 
 Two cookie strategies are available:
 
@@ -268,6 +270,56 @@ authwert \
     --userinf='/etc/authwert/users.json' \
     --logdir='/var/log/authwert'
 ```
+
+---
+
+<a id="traefik-integration"></a>
+## Traefik Integration
+
+authwert works with Traefik's [ForwardAuth middleware](https://doc.traefik.io/traefik/middlewares/http/forwardauth/). When Traefik calls `/auth/verify` it injects an `X-Forwarded-Uri` header; authwert uses this to redirect unauthenticated browsers to the login page directly, so no `errors` middleware or middleware chain is needed.
+
+**Kubernetes (k3s) — Middleware CRD:**
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: authwert-mysite
+  namespace: default
+spec:
+  forwardAuth:
+    address: http://authwert.default.svc.cluster.local:18401/auth/verify
+    trustForwardHeader: true
+```
+
+Apply it to an Ingress with:
+
+```
+traefik.ingress.kubernetes.io/router.middlewares: default-authwert-mysite@kubernetescrd
+```
+
+**Docker Compose — labels on the protected service:**
+
+```yaml
+labels:
+  - "traefik.http.middlewares.authwert.forwardauth.address=http://authwert:18401/auth/verify"
+  - "traefik.http.middlewares.authwert.forwardauth.trustForwardHeader=true"
+  - "traefik.http.routers.myapp.middlewares=authwert"
+```
+
+**authwert command for this setup:**
+
+```bash
+authwert \
+    --domain="example.com" \
+    --rootpath="https://example.com/auth" \
+    --cookieid="<your-secret-cookie-name>" \
+    --prvkey="/etc/authwert/auth.key" \
+    --userinf='/etc/authwert/users.json' \
+    --logdir='/var/log/authwert'
+```
+
+> **Note:** `trustForwardHeader: true` is required so that authwert receives the `X-Forwarded-Uri` header. Without it, the unauthenticated visitor sees a raw 401 instead of being redirected to the login page.
 
 ---
 
@@ -629,7 +681,7 @@ python3 -m pytest test/test_auth.py::TestAuthVerify::test_valid_jwt_cookie_retur
 python3 -m pytest -x
 ```
 
-The test suite covers configuration parsing, JWT token creation and validation, RSA key and certificate loading, open-redirect safety, the login/logout/verify request handlers, the `--serve` file server including authentication enforcement and path-traversal prevention, and all six bundled auth plugins (WordPress, htpasswd, LDAP, Django, Drupal, Nextcloud, Ghost). Plugin tests mock their third-party dependencies so no database or LDAP server is required to run them.
+The test suite covers configuration parsing, JWT token creation and validation, RSA key and certificate loading, open-redirect safety, the login/logout/verify request handlers (including Traefik ForwardAuth redirect behaviour), the `--serve` file server including authentication enforcement and path-traversal prevention, and all six bundled auth plugins (WordPress, htpasswd, LDAP, Django, Drupal, Nextcloud, Ghost). Plugin tests mock their third-party dependencies so no database or LDAP server is required to run them.
 
 ---
 

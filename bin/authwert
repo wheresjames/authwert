@@ -51,6 +51,10 @@ async def authVerify(ctx, q):
         Log(e)
 
     if not si:
+        forwarded_uri = ctx.req.headers.get('X-Forwarded-Uri', '')
+        if forwarded_uri and _p.rootpath:
+            rd = urllib.parse.quote(forwarded_uri, safe='')
+            return web.HTTPSeeOther(f'{_p.rootpath}/login?rd={rd}')
         return web.Response(text='Access Denied', status=401)
 
     if _p.verbose:
@@ -106,10 +110,7 @@ async def authLogin(ctx, q):
 
     # Default redirect
     if not q.rd:
-        if _p.rootpath:
-            q.rd = f'{_p.rootpath}/login'
-        else:
-            q.rd = '/'
+        q.rd = _p.rootpath if _p.rootpath else '/'
 
     if _p.verbose:
         Log(f'Redirect: {q.rd}')

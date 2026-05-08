@@ -136,11 +136,12 @@ def make_session_opts():
 
 
 class MockRequest:
-    def __init__(self, cookies=None, path="/", body_exists=False, post_data=None):
+    def __init__(self, cookies=None, path="/", body_exists=False, post_data=None, headers=None):
         self.cookies = cookies or {}
         self.path = path
         self.body_exists = body_exists
         self._post_data = post_data or {}
+        self.headers = headers or {}
 
     async def post(self):
         return dict(self._post_data)
